@@ -108,3 +108,30 @@ test("kegagalan provider tercatat dengan kode tanpa membocorkan URL atau token",
   await assert.rejects(resolveDownload("https://youtu.be/xVCErUW1eb8", "mp4", { platform, onFailure: (details) => failures.push(details) }), /ERR_DIRECT_ACCESS_DENIED/);
   assert.deepEqual(failures, [{ platform: "YouTube", provider: "ymcdn", code: "ERR_DIRECT_ACCESS_DENIED" }]);
 });
+
+test("YouTube HTTP403 mencatat hostname saja tanpa query token", async () => {
+  const result = await youtube("https://youtu.be/xVCErUW1eb8", "mp4", {
+    metadata: false, provider: "convert1s",
+    client: { post: async () => { throw Object.assign(new Error("Request failed"), { response: { status: 403 }, config: { url: "https://hub.convert1s.com/api/download?token=secret" } }); } },
+  });
+  assert.equal(result.errors[0].code, "HTTP_403");
+  assert.equal(result.errors[0].host, "hub.convert1s.com");
+  assert.ok(!JSON.stringify(result).includes("secret"));
+});
+
+test("Safelinku HTTP403 mempertahankan hostname endpoint yang menolak", async () => {
+  const result = await safelinku("https://sfl.gl/emLL5", {
+    autoResolve: false,
+    client: async () => { throw Object.assign(new Error("Request failed with status code 403"), { response: { status: 403 } }); },
+  });
+  assert.equal(result.status, false);
+  assert.equal(result.code, "HTTP_403");
+  assert.equal(result.host, "sfl.gl");
+});
+
+test("bot membedakan akses ditolak dari media tidak publik", async () => {
+  const failures = [];
+  const platform = { name: "YouTube", providers: [{ name: "ytmp3", scrape: async () => ({ status: false, errors: [{ code: "HTTP_403", host: "hub.convert1s.com" }] }) }] };
+  await assert.rejects(resolveDownload("https://youtu.be/xVCErUW1eb8", "mp4", { platform, onFailure: (details) => failures.push(details) }), /Provider menolak akses dari server bot/);
+  assert.equal(failures[0].host, "hub.convert1s.com");
+});

@@ -69,6 +69,8 @@ Gunakan domain production tetap, misalnya `https://nama-project.vercel.app`, seb
 
 Pastikan `/api/webhook` dapat diakses publik tanpa login atau Deployment Protection. Endpoint root `/` menampilkan status layanan; status ini tidak menguji token atau provider.
 
+`vercel.json` menargetkan function ke Singapore (`sin1`). Setelah deploy, buka `/api` dan periksa field `region`. Jika masih `iad1`, cek pengaturan Function Region di dashboard Vercel dan pilih Singapore, lalu deploy ulang. Region yang berbeda mengubah jalur/IP keluar, tetapi tidak menjamin akses jika provider memblokir seluruh jaringan datacenter Vercel.
+
 ## 4. Pasang webhook
 
 Setelah deployment selesai dan `.env` lokal terisi:
@@ -137,6 +139,7 @@ test/providers.test.js Regresi cookie Safelinku dan backend YouTube
 - **Media gagal diambil:** coba tautan publik lain. Provider scraper dapat berubah atau memblokir IP server; lihat pemetaan provider di `src/platforms.js`.
 - **Safelinku gagal:** domain `sfl.gl` kini menggunakan provider Safelinku, bukan Unshorten umum. Deploy versi terbaru untuk mendapatkan pemetaan ini dan perbaikan cookie gateway.
 - **YouTube bekerja lokal tetapi gagal di Vercel:** periksa detail provider pada pesan bot dan log **Downloader provider failed** di dashboard Vercel. `HTTP_403` / `ERR_DIRECT_ACCESS_DENIED` menunjukkan provider menolak request; `HTTP_429` berarti pembatasan request; `TIMEOUT` berarti provider terlalu lambat. Status tautan publik tidak menjamin backend downloader dapat mengaksesnya dari IP Vercel. Log hanya memuat platform/provider/kode, tanpa token atau URL unduhan.
+- **403 tetap muncul di Singapore:** lihat hostname pada Detail provider/log untuk mengetahui backend yang menolak. Kode penolakan `128` dari ymcdn dipertahankan sebagai kode provider, bukan dianggap sebagai tautan privat. Jika provider tetap memblokir IP Vercel, scraper perlu dijalankan dari server/jalur keluar yang diterima provider, sementara webhook Telegram dapat tetap di Vercel. Perubahan parser atau pengulangan request tidak menjamin pembatasan jaringan ini hilang.
 - **Hanya tombol unduh yang muncul:** URL mungkin tidak bisa diambil Telegram atau hasilnya berupa file/HLS.
 
 `npm test` menggunakan mock dan tidak memanggil layanan downloader maupun Telegram; pengujian end-to-end membutuhkan token serta deployment aktif.

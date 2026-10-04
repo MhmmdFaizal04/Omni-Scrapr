@@ -133,8 +133,8 @@ async function resolveDownload(url, format = "mp4", options = {}) {
   }
   const deadline = options.deadline || Date.now() + (options.totalTimeout || 170000);
   const failures = [];
-  const recordFailure = (entry, code, status) => {
-    const failure = { platform: platform.name, provider: entry.name, code, ...(status ? { status } : {}) };
+  const recordFailure = (entry, code, status, context = {}) => {
+    const failure = { platform: platform.name, provider: entry.name, code, ...(status ? { status } : {}), ...(context.host ? { host: context.host } : {}), ...(context.stage ? { stage: context.stage } : {}) };
     failures.push(failure);
     (options.onFailure || ((details) => console.warn("Downloader provider failed", details)))(failure);
   };
@@ -161,15 +161,17 @@ async function resolveDownload(url, format = "mp4", options = {}) {
         return result;
       }
       const detail = response?.errors?.at(-1);
-      recordFailure(entry, detail?.code || response?.code || "NO_RESULT");
+      recordFailure(entry, detail?.code || response?.code || "NO_RESULT", undefined, detail || response || {});
     } catch (error) {
       recordFailure(entry, error.code || (error.message === "Provider timeout" ? "TIMEOUT" : "REQUEST_FAILED"), error.response?.status);
       // Lanjut ke provider berikutnya jika jaringan/provider gagal.
     }
   }
   const message = platform.kind === "resolver" ? "Tautan belum berhasil di-resolve." : "Media belum berhasil diambil.";
-  const details = failures.map(({ provider, code }) => `• ${provider}: ${code}`).join("\n");
-  throw new Error(`${message}\nProvider mungkin sedang bermasalah atau menolak koneksi server. Coba lagi nanti.${details ? `\n\nDetail provider:\n${details}` : ""}`);
+  const denied = failures.some(({ code }) => ["HTTP_403", "ERR_DIRECT_ACCESS_DENIED"].includes(code));
+  const explanation = denied ? "Provider menolak akses dari server bot (403/access denied). Status publik tautan tidak menghapus pembatasan ini." : "Provider mungkin sedang bermasalah atau menolak koneksi server. Coba lagi nanti.";
+  const details = failures.map(({ provider, code, host }) => `• ${provider}: ${code}${host ? ` (${host})` : ""}`).join("\n");
+  throw new Error(`${message}\n${explanation}${details ? `\n\nDetail provider:\n${details}` : ""}`);
 }
 
 function resolveLink(url, options = {}) {
