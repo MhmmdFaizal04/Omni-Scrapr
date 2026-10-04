@@ -16,8 +16,8 @@ const platforms = [
     provider("direct", require("../lib/instagram/direct").scrape),
   ] },
   { name: "YouTube", hosts: ["youtube.com", "youtu.be"], providers: [
-    provider("ytmp3", (url, format) => require("../lib/youtube/ytmp3").scrape(url, format)),
-    provider("ytmp3gg", (url, format) => require("../lib/youtube/ytmp3gg").scrape(url, { format })),
+    provider("ytmp3", (url, format) => require("../lib/youtube/ytmp3").scrape(url, format, { provider: "convert1s" })),
+    provider("ymcdn", (url, format) => require("../lib/youtube/ytmp3").scrape(url, format, { provider: "ymcdn" })),
   ] },
   { name: "Facebook", hosts: ["facebook.com", "fb.watch", "fb.com"], providers: [
     provider("snapsave", require("../lib/facebook/snapsave").scrape),
@@ -70,7 +70,7 @@ const platforms = [
   { name: "Sfile", kind: "resolver", hosts: ["sfile.mobi", "sfile.co"], providers: [
     provider("sfile", require("../lib/resolver/sfile").scrape),
   ] },
-  { name: "Safelinku", kind: "resolver", hosts: ["safelinku.com", "safelinku.net"], providers: [
+  { name: "Safelinku", kind: "resolver", hosts: ["safelinku.com", "safelinku.net", "sfl.gl"], providers: [
     provider("safelinku", (url) => require("../lib/resolver/safelinku").scrape(url, { autoResolve: false })),
   ] },
   { name: "Sub2Unlock", kind: "resolver", hosts: ["sub2unlock.com", "sub2unlock.net", "sub2unlock.io", "sub2unlock.me"], providers: [
@@ -132,6 +132,12 @@ async function resolveDownload(url, format = "mp4", options = {}) {
     throw new Error("Perintah /mp3 hanya untuk YouTube. Untuk platform lain, kirim tautannya langsung.");
   }
   const deadline = options.deadline || Date.now() + (options.totalTimeout || 170000);
+  const failures = [];
+  const recordFailure = (entry, code, status) => {
+    const failure = { platform: platform.name, provider: entry.name, code, ...(status ? { status } : {}) };
+    failures.push(failure);
+    (options.onFailure || ((details) => console.warn("Downloader provider failed", details)))(failure);
+  };
   for (const entry of platform.providers) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
@@ -154,11 +160,16 @@ async function resolveDownload(url, format = "mp4", options = {}) {
         }
         return result;
       }
-    } catch {
+      const detail = response?.errors?.at(-1);
+      recordFailure(entry, detail?.code || response?.code || "NO_RESULT");
+    } catch (error) {
+      recordFailure(entry, error.code || (error.message === "Provider timeout" ? "TIMEOUT" : "REQUEST_FAILED"), error.response?.status);
       // Lanjut ke provider berikutnya jika jaringan/provider gagal.
     }
   }
-  throw new Error(platform.kind === "resolver" ? "Tautan belum berhasil di-resolve. Pastikan tautan valid, lalu coba lagi nanti." : "Media belum berhasil diambil. Pastikan tautan publik dan valid, lalu coba lagi nanti.");
+  const message = platform.kind === "resolver" ? "Tautan belum berhasil di-resolve." : "Media belum berhasil diambil.";
+  const details = failures.map(({ provider, code }) => `• ${provider}: ${code}`).join("\n");
+  throw new Error(`${message}\nProvider mungkin sedang bermasalah atau menolak koneksi server. Coba lagi nanti.${details ? `\n\nDetail provider:\n${details}` : ""}`);
 }
 
 function resolveLink(url, options = {}) {

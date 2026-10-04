@@ -20,6 +20,10 @@ Platform media: TikTok, Instagram, YouTube, Facebook, Twitter/X, Spotify, SoundC
 
 Shortlink umum seperti `bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, dan `s.id` dikenali otomatis. Untuk domain shortlink lain, gunakan `/resolve`. Unshorten mengikuti redirect HTTP dan meta-refresh; shortlink yang hanya memakai JavaScript atau captcha belum tentu dapat dibuka. Jika tidak ditemukan redirect, bot menyatakan bahwa URL tetap sama. Resolver umum memeriksa alamat IP/DNS publik pada setiap langkah dan membatasi respons halaman hingga 2 MB.
 
+Safelinku juga mengenali domain `sfl.gl`. Library mempertahankan cookie session yang digabung dalam header dan memisahkannya menurut domain selama perpindahan ke gateway.
+
+YouTube memakai dua backend terpisah: `ytmp3` (convert1s) dan `ymcdn` (backend legacy YTMP3). Tautan `watch`, `youtu.be`, `shorts`, dan `live` dinormalkan menjadi URL canonical tanpa parameter tracking. Setiap backend memiliki anggaran sekitar 50 detik termasuk metadata/polling; fallback berikutnya memiliki anggaran sendiri. Provider `ytmp3gg` tidak dijadikan fallback bot karena memakai backend convert1s yang sama.
+
 ## 1. Buat bot
 
 1. Buka **@BotFather** di Telegram.
@@ -121,6 +125,7 @@ src/telegram.js       Client Telegram Bot API
 scripts/webhook.js    Pasang/periksa/hapus webhook
 lib/                 Library downloader yang sudah tersedia
 test/bot.test.js      Pengujian lokal dengan mock, tanpa token
+test/providers.test.js Regresi cookie Safelinku dan backend YouTube
 ```
 
 ## Troubleshooting
@@ -130,6 +135,8 @@ test/bot.test.js      Pengujian lokal dengan mock, tanpa token
 - **401:** secret `.env` lokal tidak sama dengan yang dipakai deployment. Samakan, redeploy, lalu jalankan `webhook:set` kembali.
 - **503:** token atau secret belum tersedia pada deployment aktif.
 - **Media gagal diambil:** coba tautan publik lain. Provider scraper dapat berubah atau memblokir IP server; lihat pemetaan provider di `src/platforms.js`.
+- **Safelinku gagal:** domain `sfl.gl` kini menggunakan provider Safelinku, bukan Unshorten umum. Deploy versi terbaru untuk mendapatkan pemetaan ini dan perbaikan cookie gateway.
+- **YouTube bekerja lokal tetapi gagal di Vercel:** periksa detail provider pada pesan bot dan log **Downloader provider failed** di dashboard Vercel. `HTTP_403` / `ERR_DIRECT_ACCESS_DENIED` menunjukkan provider menolak request; `HTTP_429` berarti pembatasan request; `TIMEOUT` berarti provider terlalu lambat. Status tautan publik tidak menjamin backend downloader dapat mengaksesnya dari IP Vercel. Log hanya memuat platform/provider/kode, tanpa token atau URL unduhan.
 - **Hanya tombol unduh yang muncul:** URL mungkin tidak bisa diambil Telegram atau hasilnya berupa file/HLS.
 
 `npm test` menggunakan mock dan tidak memanggil layanan downloader maupun Telegram; pengujian end-to-end membutuhkan token serta deployment aktif.
