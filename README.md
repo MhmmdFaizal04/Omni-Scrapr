@@ -53,8 +53,6 @@ Secret harus 32–256 karakter, hanya huruf, angka, `_`, atau `-`. `.env` sudah 
 
 ## 3. Deploy ke Vercel
 
-### Melalui dashboard
-
 1. Upload project ke repository GitHub, lalu **Add New → Project** di Vercel dan impor repository.
 2. Pilih **Framework Preset: Other**, **Node.js: 22.x**, dan root directory folder project ini.
 3. Install Command: `npm install`. Biarkan Build Command tanpa override dan Output Directory default.
@@ -63,16 +61,7 @@ Secret harus 32–256 karakter, hanya huruf, angka, `_`, atau `-`. `.env` sudah 
    - `TELEGRAM_WEBHOOK_SECRET`
 5. Deploy. Jika environment variable diubah setelah deployment, redeploy agar konfigurasi baru digunakan.
 
-### Melalui CLI
-
-```powershell
-npx vercel
-npx vercel env add TELEGRAM_BOT_TOKEN production
-npx vercel env add TELEGRAM_WEBHOOK_SECRET production
-npx vercel --prod
-```
-
-Masukkan nilai masing-masing variable saat diminta CLI. Gunakan domain production tetap, misalnya `https://nama-project.vercel.app`, sebagai `BOT_BASE_URL` di `.env` lokal.
+Gunakan domain production tetap, misalnya `https://nama-project.vercel.app`, sebagai `BOT_BASE_URL` di `.env` lokal. Deployment dan perubahan environment variable dilakukan melalui dashboard Vercel.
 
 Pastikan `/api/webhook` dapat diakses publik tanpa login atau Deployment Protection. Endpoint root `/` menampilkan status layanan; status ini tidak menguji token atau provider.
 
@@ -137,6 +126,7 @@ test/bot.test.js      Pengujian lokal dengan mock, tanpa token
 ## Troubleshooting
 
 - **Bot tidak merespons:** cek `npm run webhook:info`, environment variable Production, akses publik endpoint, dan log function Vercel.
+- **Tombol terus memuat/menghubungkan:** periksa `allowed_updates` pada `webhook:info`. Harus ada `message` dan `callback_query`; jalankan `npm run webhook:set` jika belum. Pastikan kode terbaru yang menangani `callback_query` sudah di-deploy, kemudian kirim `/start` untuk mendapatkan menu baru.
 - **401:** secret `.env` lokal tidak sama dengan yang dipakai deployment. Samakan, redeploy, lalu jalankan `webhook:set` kembali.
 - **503:** token atau secret belum tersedia pada deployment aktif.
 - **Media gagal diambil:** coba tautan publik lain. Provider scraper dapat berubah atau memblokir IP server; lihat pemetaan provider di `src/platforms.js`.
