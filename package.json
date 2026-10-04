@@ -1,0 +1,19 @@
+{
+  "name": "botdown-telegram",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Bot downloader Telegram dengan webhook Vercel",
+  "type": "commonjs",
+  "engines": { "node": "22.x" },
+  "scripts": {
+    "test": "node --test",
+    "webhook:set": "node --env-file-if-exists=.env scripts/webhook.js set",
+    "webhook:info": "node --env-file-if-exists=.env scripts/webhook.js info",
+    "webhook:delete": "node --env-file-if-exists=.env scripts/webhook.js delete"
+  },
+  "dependencies": {
+    "@vercel/functions": "^3.0.0",
+    "axios": "^1.12.0",
+    "cheerio": "^1.1.2"
+  }
+}
