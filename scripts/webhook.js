@@ -1,4 +1,5 @@
 const { createTelegram } = require("../src/telegram");
+const { commands } = require("../src/menu");
 
 async function main() {
   const telegram = createTelegram(process.env.TELEGRAM_BOT_TOKEN);
@@ -19,18 +20,11 @@ async function main() {
   const result = await telegram("setWebhook", {
     url: new URL("/api/webhook", base).href,
     secret_token: secret,
-    allowed_updates: ["message"],
+    allowed_updates: ["message", "callback_query"],
     max_connections: 10,
     drop_pending_updates: false,
   });
-  await telegram("setMyCommands", { commands: [
-    { command: "start", description: "Mulai menggunakan bot" },
-    { command: "help", description: "Panduan penggunaan" },
-    { command: "download", description: "Unduh dari tautan" },
-    { command: "mp3", description: "Audio dari YouTube" },
-    { command: "mp4", description: "Video dari YouTube" },
-    { command: "platforms", description: "Daftar platform" },
-  ] });
+  await telegram("setMyCommands", { commands });
   console.log("Webhook terpasang:", result);
 }
 

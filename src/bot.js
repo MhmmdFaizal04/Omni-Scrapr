@@ -1,16 +1,5 @@
-const { platforms, safeUrl, resolveDownload } = require("./platforms");
-
-const HELP = [
-  "Halo! Kirim tautan media publik untuk mendapatkan media dan tombol unduh.",
-  "",
-  "/download <tautan> — unduh otomatis",
-  "/mp3 <tautan YouTube> — audio YouTube",
-  "/mp4 <tautan YouTube> — video YouTube",
-  "/platforms — daftar platform",
-  "/help — bantuan",
-  "",
-  "Satu tautan per pesan. Untuk album/playlist, tombol unduh menampilkan hingga 8 hasil; bot mengirim satu media utama.",
-].join("\n");
+const { safeUrl, resolveDownload, resolveLink } = require("./platforms");
+const { menuPage, prompts } = require("./menu");
 
 function extractUrl(message) {
   const text = message.text || message.caption || "";
@@ -30,27 +19,53 @@ function buildKeyboard(downloads) {
   }]) };
 }
 
-async function handleUpdate(update, { telegram, resolve = resolveDownload }) {
+async function handleUpdate(update, { telegram, resolve = resolveDownload, resolveOnly = resolveLink }) {
+  const callback = update.callback_query;
+  if (callback) {
+    await telegram("answerCallbackQuery", { callback_query_id: callback.id });
+    const page = callback.data?.startsWith("menu:") ? callback.data.slice(5) : null;
+    const message = callback.message;
+    if (!page || !message?.chat?.id) return;
+    const base = { chat_id: message.chat.id, ...(message.message_thread_id ? { message_thread_id: message.message_thread_id } : {}) };
+    if (prompts[page]) {
+      return telegram("sendMessage", { ...base, text: prompts[page], reply_markup: { force_reply: true, input_field_placeholder: "Tempel tautan di sini…" } });
+    }
+    if (!["home", "help", "platforms", "resolver"].includes(page)) return;
+    try {
+      return await telegram("editMessageText", { ...base, message_id: message.message_id, ...menuPage(page, callback.from) });
+    } catch (error) {
+      if (error.message.includes("message is not modified")) return;
+      return telegram("sendMessage", { ...base, ...menuPage(page, callback.from) });
+    }
+  }
   const message = update.message;
   if (!message || message.from?.is_bot || !message.chat?.id) return;
   const text = message.text || message.caption || "";
-  const command = text.match(/^\/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s|$)/i)?.[1]?.toLowerCase();
+  let command = text.match(/^\/([a-z0-9_]+)(?:@[a-z0-9_]+)?(?:\s|$)/i)?.[1]?.toLowerCase();
+  if (!command && message.reply_to_message?.from?.is_bot) {
+    const prompt = message.reply_to_message.text || "";
+    if (prompt === prompts.audio) command = "mp3";
+    if (prompt === prompts.resolve_input) command = "resolve";
+  }
   const base = { chat_id: message.chat.id, ...(message.message_thread_id ? { message_thread_id: message.message_thread_id } : {}) };
   const send = (content, extra = {}) => telegram("sendMessage", { ...base, text: content, ...extra });
-  if (command === "start" || command === "help") return send(HELP);
-  if (command === "platforms") return send(`Platform tersedia:\n${platforms.map((p) => `• ${p.name}`).join("\n")}\n\nKetersediaan media bergantung pada provider dan akses publik.`);
-  if (command && !["download", "mp3", "mp4"].includes(command)) return send("Perintah tidak dikenal. Ketik /help.");
+  if (["start", "help", "platforms"].includes(command)) return telegram("sendMessage", { ...base, ...menuPage(command === "start" ? "home" : command, message.from) });
+  if (command && !["download", "mp3", "mp4", "resolve"].includes(command)) return send("Perintah tidak dikenal. Ketik /help.");
   const url = extractUrl(message);
   if (!url) {
+    if (command === "resolve") return telegram("sendMessage", { ...base, ...menuPage("resolver", message.from) });
+    if (command === "download" || command === "mp3" || command === "mp4") return send(command === "mp3" ? prompts.audio : prompts.download, { reply_markup: { force_reply: true, selective: true }, reply_parameters: { message_id: message.message_id } });
     if (message.chat.type !== "private" && !command) return;
     return send("Kirim tautan lengkap, misalnya https://www.tiktok.com/@user/video/123. Ketik /help untuk bantuan.");
   }
   let progress;
   try {
-    progress = await send("Sedang mengambil media, mohon tunggu…");
-    const result = await resolve(url, command === "mp3" ? "mp3" : "mp4");
+    progress = await send(command === "resolve" ? "🔓 Sedang membuka tautan dan mencari tujuan akhirnya…" : "⏳ Sedang mengambil media atau membuka tautan, mohon tunggu…");
+    const result = command === "resolve" ? await resolveOnly(url) : await resolve(url, command === "mp3" ? "mp3" : "mp4");
     const title = String(result.title || "Media").slice(0, 800);
-    const description = `${title}\n\nPlatform: ${result.platform}\nProvider: ${result.provider}\nPilih tombol di bawah untuk mengunduh.`;
+    const linkOnly = result.downloads.every((item) => item.type === "link");
+    const destination = result.destinationUrl || result.url || result.downloads[0].url;
+    const description = `${linkOnly ? "🔓 TAUTAN BERHASIL DIBUKA" : "✅ HASIL SIAP"}\n━━━━━━━━━━━━━━━━━━━━\n${title}\n\n🌐 ${result.platform}\n⚙️ ${result.provider}${result.resolver ? `\n🔓 Via ${result.resolver}` : ""}${linkOnly ? `\n\n🔗 Tujuan:\n${destination.slice(0, 1800)}${destination === url ? "\n\nTidak ditemukan redirect; URL tetap sama." : ""}` : ""}\n\n${linkOnly ? "Ketuk tombol untuk membuka tautan tujuan." : "Pilih tombol di bawah untuk mengunduh."}`;
     const keyboard = buildKeyboard(result.downloads);
     await telegram("editMessageText", { ...base, message_id: progress.message_id, text: description, reply_markup: keyboard, link_preview_options: { is_disabled: true } });
     const primary = result.downloads.find((item) => item.type === (command === "mp3" ? "audio" : "video"))

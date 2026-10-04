@@ -1,6 +1,9 @@
 // Import provider secara eksplisit supaya Vercel dapat melacak dependensinya.
 // Provider yang membutuhkan Chrome atau executable lokal tidak dipakai.
 const provider = (name, scrape) => ({ name, scrape });
+const { validatePublicUrl, publicLookup } = require("./public-url");
+const unshorten = provider("unshorten", (url) => require("../lib/resolver/unshorten").scrape(url, { autoResolve: false, validateUrl: validatePublicUrl, lookup: publicLookup, proxy: false }));
+const genericResolver = { name: "Unshorten", kind: "resolver", hosts: ["bit.ly", "tinyurl.com", "t.co", "cutt.ly", "shorturl.at", "is.gd", "v.gd", "s.id", "rb.gy", "rebrand.ly", "shorturl.fm"], providers: [unshorten] };
 const platforms = [
   { name: "TikTok", hosts: ["tiktok.com"], providers: [
     provider("snaptik", require("../lib/tiktok/snaptik").scrape),
@@ -61,12 +64,22 @@ const platforms = [
   { name: "TeraBox", hosts: ["terabox.com", "teraboxapp.com", "1024terabox.com", "teraboxlink.com", "terasharelink.com"], providers: [
     provider("sechno", require("../lib/terabox/sechno").scrape),
   ] },
-  { name: "MediaFire", hosts: ["mediafire.com"], providers: [
+  { name: "MediaFire", kind: "resolver", hosts: ["mediafire.com"], providers: [
     provider("mediafire", require("../lib/resolver/mediafire").scrape),
   ] },
-  { name: "Sfile", hosts: ["sfile.mobi"], providers: [
+  { name: "Sfile", kind: "resolver", hosts: ["sfile.mobi", "sfile.co"], providers: [
     provider("sfile", require("../lib/resolver/sfile").scrape),
   ] },
+  { name: "Safelinku", kind: "resolver", hosts: ["safelinku.com", "safelinku.net"], providers: [
+    provider("safelinku", (url) => require("../lib/resolver/safelinku").scrape(url, { autoResolve: false })),
+  ] },
+  { name: "Sub2Unlock", kind: "resolver", hosts: ["sub2unlock.com", "sub2unlock.net", "sub2unlock.io", "sub2unlock.me"], providers: [
+    provider("sub2unlock", (url) => require("../lib/resolver/sub2unlock").scrape(url, { autoResolve: false })),
+  ] },
+  { name: "Rekonise", kind: "resolver", hosts: ["rekonise.com"], providers: [
+    provider("rekonise", (url) => require("../lib/resolver/rekonise").scrape(url, { autoResolve: false })),
+  ] },
+  genericResolver,
 ];
 
 function safeUrl(value) {
@@ -93,7 +106,8 @@ function normalizeDownloads(result) {
     seen.add(url.href);
     const rawType = String(item.type || result.type || "file").toLowerCase();
     let type = "file";
-    if (/audio|mp3|m4a|wav/.test(rawType)) type = "audio";
+    if (rawType === "link") type = "link";
+    else if (/audio|mp3|m4a|wav/.test(rawType)) type = "audio";
     else if (/image|photo|jpg|jpeg|png|webp/.test(rawType)) type = "image";
     else if (/video|mp4|mov|webm/.test(rawType)) type = "video";
     // HLS tidak dapat dikirim sebagai video langsung lewat Telegram.
@@ -111,12 +125,13 @@ function withTimeout(promise, ms) {
 }
 
 async function resolveDownload(url, format = "mp4", options = {}) {
-  const platform = options.platform || detectPlatform(url);
+  const detect = options.detect || detectPlatform;
+  const platform = options.platform || detect(url);
   if (!platform) throw new Error("Platform tautan ini belum didukung. Ketik /platforms untuk melihat daftar.");
-  if (format === "mp3" && platform.name !== "YouTube") {
+  if (format === "mp3" && platform.name !== "YouTube" && platform.kind !== "resolver") {
     throw new Error("Perintah /mp3 hanya untuk YouTube. Untuk platform lain, kirim tautannya langsung.");
   }
-  const deadline = Date.now() + (options.totalTimeout || 170000);
+  const deadline = options.deadline || Date.now() + (options.totalTimeout || 170000);
   for (const entry of platform.providers) {
     const remaining = deadline - Date.now();
     if (remaining <= 0) break;
@@ -124,13 +139,32 @@ async function resolveDownload(url, format = "mp4", options = {}) {
       const response = await withTimeout(Promise.resolve().then(() => entry.scrape(url, format)), Math.min(options.providerTimeout || 60000, remaining));
       const downloads = normalizeDownloads(response?.result);
       if (response?.status === true && downloads.length) {
-        return { ...response.result, downloads, platform: platform.name, provider: entry.name };
+        const result = { ...response.result, downloads, platform: platform.name, provider: entry.name, kind: platform.kind || "media" };
+        const destination = safeUrl(result.destinationUrl || result.url || downloads[0].url)?.href;
+        const target = !options.resolveOnly && destination && detect(destination);
+        const visited = new Set(options.visited || [url]);
+        if (platform.kind === "resolver" && !options.resolveOnly && target && !visited.has(destination) && visited.size < 4 && downloads.every((item) => item.type === "link") && deadline > Date.now()) {
+          visited.add(destination);
+          try {
+            const next = await resolveDownload(destination, format, { ...options, platform: target, deadline, visited });
+            return { ...next, originalUrl: url, destinationUrl: destination, resolver: [platform.name, next.resolver].filter(Boolean).join(" → ") };
+          } catch {
+            // Tetap berikan tautan tujuan jika unduhan lanjutan gagal.
+          }
+        }
+        return result;
       }
     } catch {
       // Lanjut ke provider berikutnya jika jaringan/provider gagal.
     }
   }
-  throw new Error("Media belum berhasil diambil. Pastikan tautan publik dan valid, lalu coba lagi nanti.");
+  throw new Error(platform.kind === "resolver" ? "Tautan belum berhasil di-resolve. Pastikan tautan valid, lalu coba lagi nanti." : "Media belum berhasil diambil. Pastikan tautan publik dan valid, lalu coba lagi nanti.");
 }
 
-module.exports = { platforms, safeUrl, detectPlatform, normalizeDownloads, resolveDownload };
+function resolveLink(url, options = {}) {
+  const detected = detectPlatform(url);
+  const platform = options.platform || (detected?.kind === "resolver" ? detected : genericResolver);
+  return resolveDownload(url, "mp4", { ...options, platform, resolveOnly: true });
+}
+
+module.exports = { platforms, safeUrl, detectPlatform, normalizeDownloads, resolveDownload, resolveLink };

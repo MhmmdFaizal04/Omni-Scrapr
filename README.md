@@ -6,13 +6,19 @@ Bot downloader berbasis library pada folder `lib/`, Node.js 22, dan webhook Tele
 
 - Deteksi platform otomatis dari tautan, termasuk tautan tersembunyi pada teks Telegram.
 - Provider cadangan untuk platform yang memiliki beberapa provider HTTP.
-- `/start`, `/help`, `/download`, `/mp3`, `/mp4`, dan `/platforms`.
+- Menu awal bergaya HTML dengan tombol Download, YouTube MP3, Resolver, Platform, dan Cara Pakai. Navigasi tombol memperbarui pesan menu.
+- `/start`, `/help`, `/download`, `/resolve`, `/mp3`, `/mp4`, dan `/platforms`.
+- Resolver lengkap: MediaFire, Sfile, Safelinku, Sub2Unlock, Rekonise, dan Unshorten.
+- `/resolve <tautan>` menampilkan tautan tujuan/direct download tanpa mengambil media lanjut. Tautan resolver yang dikirim biasa otomatis dilanjutkan ke platform media atau resolver berikutnya jika didukung.
+- Tombol input meminta balasan tautan (ForceReply), sehingga pilihan YouTube MP3 dan Resolver tetap dikenali tanpa menyimpan sesi di Vercel.
 - `/mp3` khusus audio YouTube. Platform musik cukup dikirimi tautannya langsung.
 - Hingga 8 tombol unduh per hasil. Album/playlist mengirim satu media utama; hasil lain diakses melalui tombol.
 - Tidak menyimpan atau mengunggah file besar lewat Vercel: Telegram mengambil media dari URL provider.
 - Webhook dilindungi `secret_token`, dengan pemrosesan background menggunakan `waitUntil` milik Vercel.
 
-Platform terdaftar: TikTok, Instagram, YouTube, Facebook, Twitter/X, Spotify, SoundCloud, Apple Music, Bandcamp, Pinterest, Reddit, Threads, Douyin, Bilibili, Pixiv, RedNote, TeraBox, MediaFire, dan Sfile. Keberhasilan tiap tautan bergantung pada provider library dan akses konten.
+Platform media: TikTok, Instagram, YouTube, Facebook, Twitter/X, Spotify, SoundCloud, Apple Music, Bandcamp, Pinterest, Reddit, Threads, Douyin, Bilibili, Pixiv, RedNote, dan TeraBox. Resolver: MediaFire, Sfile (`.mobi` dan `.co`), Safelinku, Sub2Unlock, Rekonise, dan Unshorten. Keberhasilan tiap tautan bergantung pada provider library dan akses konten.
+
+Shortlink umum seperti `bit.ly`, `tinyurl.com`, `t.co`, `cutt.ly`, dan `s.id` dikenali otomatis. Untuk domain shortlink lain, gunakan `/resolve`. Unshorten mengikuti redirect HTTP dan meta-refresh; shortlink yang hanya memakai JavaScript atau captcha belum tentu dapat dibuka. Jika tidak ditemukan redirect, bot menyatakan bahwa URL tetap sama. Resolver umum memeriksa alamat IP/DNS publik pada setiap langkah dan membatasi respons halaman hingga 2 MB.
 
 ## 1. Buat bot
 
@@ -89,7 +95,10 @@ Contoh:
 /download https://www.instagram.com/reel/...
 /mp3 https://www.youtube.com/watch?v=...
 /mp4 https://youtu.be/...
+/resolve https://bit.ly/...
 ```
+
+Setelah memperbarui kode bot, deploy ulang lalu jalankan `npm run webhook:set` agar webhook menerima `callback_query` untuk tombol menu dan daftar perintah Telegram ikut diperbarui.
 
 Untuk grup, gunakan `/download@username_bot <tautan>`. Agar bot juga menerima pesan tautan biasa di grup, atur `/setprivacy` menjadi **Disable** melalui BotFather; perubahan dapat memerlukan penambahan ulang bot ke grup.
 
@@ -106,7 +115,7 @@ npm run webhook:delete
 - Resolusi provider dibatasi sekitar 170 detik total, maksimal 60 detik untuk menunggu satu provider. Timeout wrapper berhenti menunggu; request internal library yang sudah dimulai dapat tetap berjalan sampai timeout bawaan provider.
 - Dedup update bersifat best-effort dalam satu instance selama 5 menit. Background task bukan antrean persisten: restart atau penghentian function dapat menyebabkan pekerjaan hilang. Untuk kebutuhan volume tinggi/reliabilitas ketat, perlu antrean dan dedup persisten.
 - Provider `fdown`, `snapinsta`, `savetik`, dan `tikdownloader` tidak diaktifkan karena memerlukan browser/executable lokal. Library aslinya tetap tersedia di `lib/`.
-- Library playlist YouTube dan resolver shortener umum belum dihubungkan ke bot ini.
+- Library playlist YouTube belum dihubungkan ke bot ini. Rantai resolver dibatasi agar tidak berulang; jika unduhan lanjutan gagal, bot tetap mengembalikan tautan tujuan yang sudah ditemukan.
 - Telegram dapat menolak media karena ukuran, format, hotlink protection, atau URL kedaluwarsa. Bot tetap menyediakan tombol unduh. HLS dan file umum ditampilkan sebagai tautan, bukan dikirim sebagai video.
 
 ## Struktur
@@ -116,7 +125,9 @@ api/index.js          Endpoint status
 api/webhook.js        Entry point Vercel
 src/webhook.js        Validasi webhook dan background task
 src/bot.js            Perintah bot dan pengiriman hasil
+src/menu.js           Tampilan HTML, navigasi tombol, dan menu perintah
 src/platforms.js      Pemetaan domain, provider, dan normalisasi
+src/public-url.js     Validasi alamat publik untuk resolver umum
 src/telegram.js       Client Telegram Bot API
 scripts/webhook.js    Pasang/periksa/hapus webhook
 lib/                 Library downloader yang sudah tersedia
